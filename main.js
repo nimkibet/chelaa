@@ -1,30 +1,23 @@
-/* main.js updates */
-
-// Detect if the device is mobile
-var isMobile = window.innerWidth < 768;
-
-// Adjust variables based on screen size
-var radius = isMobile ? 150 : 240; // Smaller radius for mobile
-var imgWidth = isMobile ? 90 : 120; // Smaller images for mobile
-var imgHeight = isMobile ? 130 : 170; 
-var rotateSpeed = -60; 
-var autoRotate = true;
 /* love/main.js */
+// --- CONFIGURATION ---
 var radius = 240; 
-var autoRotate = true; 
-var rotateSpeed = -60; 
-var imgWidth = 120; 
-var imgHeight = 170; 
+var imgWidth = 160; 
+var imgHeight = 250; 
+var tunnelSpeed = 2;   
+var tunnelDepth = 1500; 
 
-// --- 3D Gallery Logic ---
-setTimeout(init, 1000);
+// --- GLOBAL VARIABLES ---
+var globalBeat = 0; 
+var globalTime = 0; 
 
+// --- ELEMENTS ---
 var odrag = document.getElementById('drag-container');
 var ospin = document.getElementById('spin-container');
 var aImg = ospin.getElementsByTagName('img');
 var aVid = ospin.getElementsByTagName('video');
 var aEle = [...aImg, ...aVid]; 
 
+// --- SIZING ---
 ospin.style.width = imgWidth + "px";
 ospin.style.height = imgHeight + "px";
 
@@ -32,59 +25,174 @@ var ground = document.getElementById('ground');
 ground.style.width = radius * 3 + "px";
 ground.style.height = radius * 3 + "px";
 
-function init(delayTime) {
+// Reset CSS
+ospin.style.animation = "none"; 
+odrag.style.transform = "rotateX(0deg) rotateY(0deg)"; 
+
+// --- SAFE AUDIO SYSTEM ---
+var audioContext, analyser, dataArray;
+var audioAllowed = false;
+
+function setupAudioContext() {
+    try {
+        var audio = document.getElementById("myAudio");
+        if (!audio) return;
+        if (audioContext) return; 
+
+        var AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContext();
+        
+        var src = audioContext.createMediaElementSource(audio);
+        analyser = audioContext.createAnalyser();
+        
+        src.connect(analyser);
+        analyser.connect(audioContext.destination);
+        
+        analyser.fftSize = 512;
+        var bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+        
+        audioAllowed = true;
+        audio.play();
+    } catch (e) {
+        console.warn("Audio fallback mode.", e);
+        var audio = document.getElementById("myAudio");
+        if(audio) audio.play();
+    }
+}
+
+document.body.addEventListener('click', function() {
+    setupAudioContext();
+}, { once: true });
+
+
+// --- HELPER: PINK/PURPLE PALETTE ---
+// This formula ensures colors stay in the Pink -> Purple -> Red range
+function palette(t) {
+    // Custom Palette Vectors for Pink/Purple themes
+    var a = {r:0.8, g:0.0, b:0.5}; // Base Color (Magenta-ish)
+    var b = {r:0.2, g:0.1, b:0.4}; // Variation Strength
+    var c = {r:1.0, g:1.0, b:1.0}; // Frequency
+    var d = {r:0.0, g:0.33, b:0.67}; // Phase
+
+    var r = a.r + b.r * Math.cos(6.28318 * (c.r * t + d.r));
+    var g = a.g + b.g * Math.cos(6.28318 * (c.g * t + d.g));
+    var b_val = a.b + b.b * Math.cos(6.28318 * (c.b * t + d.b));
+
+    return {
+        r: Math.floor(r * 255),
+        g: Math.floor(g * 255),
+        b: Math.floor(b_val * 255)
+    };
+}
+
+
+// --- HELPER: HEART COORDS ---
+function getHeartCoords(angle, scale) {
+    var t = angle;
+    var x = 16 * Math.pow(Math.sin(t), 3);
+    var y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+    return { x: x * scale, y: y * scale };
+}
+
+// --- PHASE 1: STATIC HEART ---
+function arrangeInHeart() {
   for (var i = 0; i < aEle.length; i++) {
-    // --- CIRCULAR FORMAT ---
-    // Calculate the angle for each image to spread them evenly in a circle
-    var angle = (i / aEle.length) * Math.PI * 2;
-    
-    // Position the images in a perfect circle using the radius variable
-    aEle[i].style.transform = `rotateY(${angle * 180 / Math.PI}deg) translateZ(${radius}px)`;
-    
-    aEle[i].style.transition = "transform 1s";
-    aEle[i].style.transitionDelay = delayTime || (aEle.length - i) / 4 + "s";
+    var el = aEle[i];
+    el.style.transition = "transform 2s ease-in-out, opacity 2s"; 
+    el.zPos = 0; 
+    el.angle = (i / aEle.length) * Math.PI * 2; 
+    var coords = getHeartCoords(el.angle, 12); 
+    el.style.opacity = 1;
+    el.style.transform = `translate3d(${coords.x - imgWidth/2}px, ${coords.y - imgHeight/2}px, 0px)`;
   }
 }
-function applyTranform(obj) {
-  if(tY > 180) tY = 180;
-  if(tY < 0) tY = 0;
-  obj.style.transform = "rotateX(" + (-tY) + "deg) rotateY(" + (tX) + "deg)";
+
+// --- PHASE 2: SPREAD ---
+function startSpreading() {
+    for (var i = 0; i < aEle.length; i++) {
+        var el = aEle[i];
+        el.style.transition = "transform 2s ease-in-out, opacity 2s"; 
+        el.zPos = i * -(tunnelDepth / aEle.length); 
+        el.angle = (i / aEle.length) * Math.PI * 10; 
+        updateImagePosition(el);
+    }
+    setTimeout(startInfiniteLoop, 2000);
 }
 
-function playSpin(yes) {
-  ospin.style.animationPlayState = (yes?'running':'paused');
+// --- PHASE 3: INFINITE LOOP ---
+function startInfiniteLoop() {
+    for (var i = 0; i < aEle.length; i++) {
+        aEle[i].style.transition = "none"; 
+    }
+    animateTunnel();
 }
 
-var sX, sY, nX, nY, desX = 0, desY = 0, tX = 0, tY = 10;
+function updateImagePosition(el) {
+    var progress = 1 - (Math.abs(el.zPos) / tunnelDepth);
+    if (progress < 0) progress = 0;
 
-if (autoRotate) {
-  var animationName = (rotateSpeed > 0 ? 'spin' : 'spinRevert');
-  ospin.style.animation = `${animationName} ${Math.abs(rotateSpeed)}s infinite linear`;
+    var coords = getHeartCoords(el.angle, 12 * progress);
+    
+    var opacity = progress;
+    if (el.zPos > 100) opacity = 0; 
+    el.style.opacity = opacity;
+    el.style.transform = `translate3d(${coords.x - imgWidth/2}px, ${coords.y - imgHeight/2}px, ${el.zPos}px)`;
+
+    // --- PINK AURA REACTION ---
+    
+    // 1. Get Pink/Purple Color based on time
+    var col = palette(el.angle * 0.5 + globalTime * 0.5);
+    
+    var beatStrength = globalBeat * 1.5; 
+    if (beatStrength > 1) beatStrength = 1; 
+
+    // 2. Aura Size
+    var blurRadius = 5 + (beatStrength * 60); 
+    var spreadRadius = 2 + (beatStrength * 30);
+    
+    var alpha = 0.6 + (beatStrength * 0.4); 
+    
+    // 3. Apply Shadow (Using the calculated Pink color)
+    el.style.boxShadow = `
+        0px 0px ${blurRadius}px ${spreadRadius}px rgba(${col.r}, ${col.g}, ${col.b}, ${alpha}),
+        0px 0px ${blurRadius * 0.5}px ${spreadRadius * 0.5}px rgba(255, 255, 255, ${alpha * 0.5})
+    `;
 }
 
+function animateTunnel() {
+    globalTime += 0.005; 
+
+    for (var i = 0; i < aEle.length; i++) {
+        var el = aEle[i];
+        el.zPos -= tunnelSpeed; 
+        el.angle += 0.01; 
+
+        if (el.zPos < -tunnelDepth) {
+            el.zPos = 200; 
+        }
+        updateImagePosition(el);
+    }
+    requestAnimationFrame(animateTunnel);
+}
+
+setTimeout(() => {
+    arrangeInHeart(); 
+    setTimeout(startSpreading, 3000); 
+}, 100);
+
+// --- INTERACTION ---
 document.onpointerdown = function (e) {
-  clearInterval(odrag.timer);
   e = e || window.event;
   var sX = e.clientX, sY = e.clientY;
   this.onpointermove = function (e) {
     e = e || window.event;
     var nX = e.clientX, nY = e.clientY;
-    desX = nX - sX; desY = nY - sY;
-    tX += desX * 0.1; tY += desY * 0.1;
-    applyTranform(odrag);
-    sX = nX; sY = nY;
+    var desX = nX - sX;
+    var desY = nY - sY;
+    odrag.style.transform = `rotateX(${-desY * 0.2}deg) rotateY(${desX * 0.2}deg)`;
   };
-  this.onpointerup = function (e) {
-    odrag.timer = setInterval(function () {
-      desX *= 0.95; desY *= 0.95;
-      tX += desX * 0.1; tY += desY * 0.1;
-      applyTranform(odrag);
-      playSpin(false);
-      if (Math.abs(desX) < 0.5 && Math.abs(desY) < 0.5) {
-        clearInterval(odrag.timer);
-        playSpin(true);
-      }
-    }, 17);
+  this.onpointerup = function () {
     this.onpointermove = this.onpointerup = null;
   };
   return false;
@@ -93,43 +201,46 @@ document.onpointerdown = function (e) {
 document.onmousewheel = function(e) {
   e = e || window.event;
   var d = e.wheelDelta / 20 || -e.detail;
-  radius += d;
-  init(1);
+  tunnelSpeed += d * 0.1; 
 };
 
-// --- WEBGL NEON HEART SHADER ---
+
+// --- WEBGL SHADER (PINK/PURPLE EDITION) ---
 var canvas = document.getElementById("webgl-canvas"); 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
 var gl = canvas.getContext('webgl');
 
-if(gl){
+if (gl) {
     var time = 0.0;
     var vertexSource = `attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }`;
+    
     var fragmentSource = `
     precision highp float;
-    uniform float width; uniform float height;
+    uniform float width; uniform float height; uniform float time; uniform float beat;
     vec2 resolution = vec2(width, height);
-    uniform float time;
-    #define POINT_COUNT 8
-    vec2 points[POINT_COUNT];
-    const float speed = -0.1; const float len = 0.25; float intensity = 1.3; float radius = 0.008;
-    float sdBezier(vec2 pos, vec2 A, vec2 B, vec2 C){    
-        vec2 a = B - A; vec2 b = A - 2.0*B + C; vec2 c = a * 2.0; vec2 d = A - pos;
-        float kk = 1.0 / dot(b,b); float kx = kk * dot(a,b); float ky = kk * (2.0*dot(a,a)+dot(d,b)) / 3.0; float kz = kk * dot(d,a);      
-        float res = 0.0; float p = ky - kx*kx; float p3 = p*p*p; float q = kx*(2.0*kx*kx - 3.0*ky) + kz; float h = q*q + 4.0*p3;
-        if(h >= 0.0){ h = sqrt(h); vec2 x = (vec2(h, -h) - q) / 2.0; vec2 uv = sign(x)*pow(abs(x), vec2(1.0/3.0)); float t = uv.x + uv.y - kx; t = clamp( t, 0.0, 1.0 ); vec2 qos = d + (c + b*t)*t; res = length(qos); }
-        else{ float z = sqrt(-p); float v = acos( q/(p*z*2.0) ) / 3.0; float m = cos(v); float n = sin(v)*1.732050808; vec3 t = vec3(m + m, -n - m, n - m) * z - kx; t = clamp( t, 0.0, 1.0 ); vec2 qos = d + (c + b*t.x)*t.x; float dis = dot(qos,qos); res = dis; qos = d + (c + b*t.y)*t.y; dis = dot(qos,qos); res = min(res,dis); qos = d + (c + b*t.z)*t.z; dis = dot(qos,qos); res = min(res,dis); res = sqrt( res ); }
-        return res;
+    
+    #define POINT_COUNT 50
+    
+    vec2 getHeartPosition(float t){ 
+        return vec2(16.0 * sin(t) * sin(t) * sin(t), 
+                    -(13.0 * cos(t) - 5.0 * cos(2.0*t) - 2.0 * cos(3.0*t) - cos(4.0*t))); 
     }
-    vec2 getHeartPosition(float t){ return vec2(16.0 * sin(t) * sin(t) * sin(t), -(13.0 * cos(t) - 5.0 * cos(2.0*t) - 2.0 * cos(3.0*t) - cos(4.0*t))); }
-    float getGlow(float dist, float radius, float intensity){ return pow(radius/dist, intensity); }
-    float getSegment(float t, vec2 pos, float offset, float scale){
-        for(int i = 0; i < POINT_COUNT; i++){ points[i] = getHeartPosition(offset + float(i)*len + fract(speed * t) * 6.28); }
-        vec2 c = (points[0] + points[1]) / 2.0; vec2 c_prev; float dist = 10000.0;
-        for(int i = 0; i < POINT_COUNT-1; i++){ c_prev = c; c = (points[i] + points[i+1]) / 2.0; dist = min(dist, sdBezier(pos, scale * c_prev, scale * points[i], scale * c)); }
-        return max(0.0, dist);
+    
+    float sdSegment( in vec2 p, in vec2 a, in vec2 b ) {
+        vec2 pa = p-a, ba = b-a;
+        float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
+        return length( pa - ba*h );
     }
+
+    // --- CUSTOM PINK/PURPLE PALETTE SHADER ---
+    vec3 palette( in float t ) {
+        // High Red, Low Green, Variable Blue
+        vec3 a = vec3(0.8, 0.0, 0.5); 
+        vec3 b = vec3(0.2, 0.1, 0.4); 
+        vec3 c = vec3(1.0, 1.0, 1.0);
+        vec3 d = vec3(0.0, 0.33, 0.67);
+        return a + b * cos( 6.28318 * (c * t + d) );
+    }
+
     void main(){
         vec2 uv = gl_FragCoord.xy/resolution.xy; 
         float widthHeightRatio = resolution.x/resolution.y;
@@ -137,44 +248,89 @@ if(gl){
         vec2 pos = centre - uv; 
         pos.y /= widthHeightRatio; 
         
-        // Adjust this value to move the heart up or down (e.g., 0.05 moves it higher)
-        pos.y += 0.02; 
+        float baseScale = 0.000025 * height;
+        float dynamicScale = baseScale + (beat * 0.000005 * height);
         
-        // Reduce the multiplier here to decrease the overall height/size of the heart
-        float scale = 0.000030 * height; 
+        float dist = 10000.0;
+        float angleStep = 6.283185 / float(POINT_COUNT);
         
-        float t = time;
-        float dist = getSegment(t, pos, 0.0, scale); 
-        float glow = getGlow(dist, radius, intensity);
-        vec3 col = vec3(0.0); 
-        col += 10.0*vec3(smoothstep(0.003, 0.001, dist)); 
-        col += glow * vec3(1.0,0.05,0.3);
+        vec2 p_prev = getHeartPosition(0.0) * dynamicScale;
         
-        dist = getSegment(t, pos, 3.4, scale); 
-        glow = getGlow(dist, radius, intensity);
-        col += 10.0*vec3(smoothstep(0.003, 0.001, dist)); 
-        col += glow * vec3(0.1,0.4,1.0);
+        for(int i=1; i<=POINT_COUNT; i++) {
+            float t = float(i) * angleStep;
+            vec2 p_curr = getHeartPosition(t) * dynamicScale;
+            float d = sdSegment(pos, p_prev, p_curr);
+            dist = min(dist, d);
+            p_prev = p_curr;
+        }
         
-        col = 1.0 - exp(-col); 
-        col = pow(col, vec3(0.4545)); 
-        gl_FragColor = vec4(col,1.0);
+        float glowIntensity = 0.002 / dist;
+        glowIntensity = pow(glowIntensity, 1.2);
+        
+        float angle = atan(pos.y, pos.x);
+        vec3 color = palette(angle * 0.5 + time * 0.5);
+        
+        // Add brightness on beat
+        color += beat * 0.5;
+        
+        vec3 finalColor = color * glowIntensity;
+        gl_FragColor = vec4(finalColor, 1.0);
     }
     `;
-    function compileShader(src, type){ var shader = gl.createShader(type); gl.shaderSource(shader, src); gl.compileShader(shader); return shader; }
+
+    function compileShader(src, type) { 
+        var shader = gl.createShader(type); 
+        gl.shaderSource(shader, src); 
+        gl.compileShader(shader); 
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.error("Shader error: " + gl.getShaderInfoLog(shader));
+        }
+        return shader; 
+    }
+
     var vertexShader = compileShader(vertexSource, gl.VERTEX_SHADER);
     var fragmentShader = compileShader(fragmentSource, gl.FRAGMENT_SHADER);
-    var program = gl.createProgram(); gl.attachShader(program, vertexShader); gl.attachShader(program, fragmentShader); gl.linkProgram(program); gl.useProgram(program);
+    var program = gl.createProgram(); 
+    gl.attachShader(program, vertexShader); 
+    gl.attachShader(program, fragmentShader); 
+    gl.linkProgram(program); 
+    gl.useProgram(program);
+
     var vertexData = new Float32Array([-1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, -1.0]);
     var vertexDataBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vertexDataBuffer); gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
     var positionHandle = gl.getAttribLocation(program, 'position'); gl.enableVertexAttribArray(positionHandle); gl.vertexAttribPointer(positionHandle, 2, gl.FLOAT, false, 0, 0);
     var timeHandle = gl.getUniformLocation(program, 'time');
     var widthHandle = gl.getUniformLocation(program, 'width');
     var heightHandle = gl.getUniformLocation(program, 'height');
-    gl.uniform1f(widthHandle, window.innerWidth); gl.uniform1f(heightHandle, window.innerHeight);
+    var beatHandle = gl.getUniformLocation(program, 'beat');
+
+    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, canvas.width, canvas.height); gl.uniform1f(widthHandle, canvas.width); gl.uniform1f(heightHandle, canvas.height); }
+    window.addEventListener('resize', resizeCanvas); resizeCanvas();
+    
     var lastFrame = Date.now();
-    function draw(){
-        var thisFrame = Date.now(); time += (thisFrame - lastFrame)/1000; lastFrame = thisFrame;
-        gl.uniform1f(timeHandle, time); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); requestAnimationFrame(draw);
+    function draw() { 
+        var thisFrame = Date.now(); 
+        time += (thisFrame - lastFrame) / 1000; 
+        lastFrame = thisFrame;
+        
+        var currentBeat = 0;
+        if (audioAllowed && analyser) {
+            try {
+                analyser.getByteFrequencyData(dataArray);
+                var bassSum = 0;
+                for (var i = 0; i < 30; i++) bassSum += dataArray[i];
+                currentBeat = (bassSum / 30) / 255 * 1.2; 
+                if(currentBeat > 1) currentBeat = 1;
+            } catch(e) {}
+        }
+
+        globalBeat = currentBeat; 
+
+        gl.uniform1f(timeHandle, time); 
+        gl.uniform1f(beatHandle, currentBeat);
+        
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); 
+        requestAnimationFrame(draw); 
     }
     draw();
 }

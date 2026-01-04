@@ -13,7 +13,8 @@
   }
   
   body {
-    overflow: hidden;
+    perspective: 1000px; /* Essential for the tunnel depth */
+      overflow: hidden;
     display: -webkit-box;
     display: -ms-flexbox;
     display: flex;
@@ -191,42 +192,63 @@ p {
 }
 /* main.css */
 
+/* 1. Pink Background for the Homepage */
 #welcome-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: #ffffff; /* Matches your body background */
+    /* A rich, classic pink gradient */
+    background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%);
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
-    z-index: 2000; /* Ensure it's above everything */
+    z-index: 1000;
     transition: opacity 1s ease-out;
 }
 
+/* 2. Visible & Classic Button Design */
 #surprise-btn {
-    padding: 15px 30px;
-    font-family: "Pacifico", sans-serif;
+    /* Typography */
+    font-family: 'Playfair Display', serif; /* Classic Serif Font */
     font-size: 24px;
-    background-color: #ff004c;
-    color: white;
-    border: none;
-    border-radius: 50px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    
+    /* Shape & Size */
+    padding: 18px 50px;
+    border-radius: 50px; /* Elegant pill shape */
+    
+    /* Colors (Classic High Contrast) */
+    color: #c2185b; /* Deep Rose color */
+    background-color: #ffffff; /* Pure white for visibility */
+    border: 2px solid #ffffff;
+    
+    /* Interaction & Depth */
     cursor: pointer;
-    box-shadow: 0 4px 15px rgba(255, 0, 76, 0.3);
-    transition: transform 0.3s;
+    box-shadow: 0 10px 20px rgba(194, 24, 91, 0.2); /* Soft shadow for depth */
+    transition: all 0.3s ease;
+    margin-top: 30px;
 }
 
+/* Button Hover Effect */
 #surprise-btn:hover {
-    transform: scale(1.1);
+    background-color: #c2185b; /* Invert to Deep Rose */
+    color: #ffffff; /* White text */
+    transform: translateY(-3px); /* Lifts up slightly */
+    box-shadow: 0 15px 30px rgba(194, 24, 91, 0.4);
 }
 
+/* Ensure the 'You are loved' text is visible on the new pink background */
 #loved-text {
-    font-family: "Pacifico", sans-serif;
-    font-size: 48px;
-    color: #ff004c;
-    animation: lovedAnimation 2s forwards;
+    color: #c2185b; /* Deep Rose to match button */
+    font-family: 'Playfair Display', serif;
+    font-size: 40px;
+    text-shadow: none; /* Clean look */
+    /* ... keep your existing positioning/display styles ... */
 }
 
 @keyframes lovedAnimation {
